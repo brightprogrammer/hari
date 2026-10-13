@@ -7,5 +7,6 @@ Follow along.
 
 - [Introduction](https://brightprogrammer.in/posts/01-making-agents-work-for-you/baby-steps)
 - [Hello World!](https://brightprogrammer.in/posts/02-making-agents-work-for-you/baby-harness/)
+- [Tool Calling](https://brightprogrammer.in/posts/03-making-agents-work-for-you/tool-calling/)
 
 ... loading, please wait
