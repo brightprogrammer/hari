@@ -10,7 +10,9 @@ from transformers.utils import get_json_schema
 # where the inference server lives, and which model it should use
 CONFIG_PATH = os.path.expanduser("~/.config/hari.toml")
 with open(CONFIG_PATH, "rb") as f:
-    URL = tomllib.load(f)["url"]
+    INFERENCE_URL = tomllib.load(f)["inference_url"]
+
+URL = INFERENCE_URL + "/v1/chat/completions"
 MODEL = "mlx-community/gemma-4-26B-A4B-it-qat-4bit"
 
 
@@ -84,7 +86,9 @@ messages.extend(
     {
         "role": "tool",
         "tool_call_id": tool["id"],
-        "content": TOOLS[tool["function"]["name"]](**json.loads(tool["function"]["arguments"])),
+        "content": TOOLS[tool["function"]["name"]](
+            **json.loads(tool["function"]["arguments"])
+        ),
     }
     for tool in message["tool_calls"]
 )
