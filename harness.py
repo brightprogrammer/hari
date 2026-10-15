@@ -3,7 +3,7 @@
 import json
 import os
 import tomllib
-import urllib.request
+from openai import OpenAI
 from datetime import datetime
 from transformers.utils import get_json_schema
 
@@ -12,8 +12,9 @@ CONFIG_PATH = os.path.expanduser("~/.config/hari.toml")
 with open(CONFIG_PATH, "rb") as f:
     INFERENCE_URL = tomllib.load(f)["inference_url"]
 
-URL = INFERENCE_URL + "/v1/chat/completions"
 MODEL = "mlx-community/gemma-4-26B-A4B-it-qat-4bit"
+
+client = OpenAI(base_url=INFERENCE_URL, api_key="unused")
 
 
 def cur_time():
@@ -33,67 +34,55 @@ def cur_date():
 TOOLS = {"cur_time": cur_time, "cur_date": cur_date}
 
 
-# same as before, but the response now comes in pieces
-# we print every piece as it arrives, and build the message from the pieces
 def generate(messages):
-    body = json.dumps(
-        {
-            "model": MODEL,
-            "max_tokens": 2560,
-            "stream": True,
-            "messages": messages,
-            "tools": [get_json_schema(x) for x in list(TOOLS.values())],
-        }
-    ).encode()
-    req = urllib.request.Request(
-        URL, data=body, headers={"Content-Type": "application/json"}
+    stream = client.responses.create(
+        model=MODEL,
+        input=messages,
+        tools=[
+            {"type": "function", **get_json_schema(x)["function"]}
+            for x in list(TOOLS.values())
+        ],
+        stream=True,
     )
 
-    message = {"role": "assistant", "content": "", "reasoning": "", "tool_calls": []}
-    with urllib.request.urlopen(req) as res:
-        for line in res:
-            line = line.decode().rstrip("\n")
-
-            # an empty line ends an event, a line starting with ':' is a comment
-            if not line or line.startswith(":"):
-                continue
-
-            # everything else starts with 'data: '
-            data = line.removeprefix("data: ")
-            if data == "[DONE]":
-                break
-
-            delta = json.loads(data)["choices"][0]["delta"]
-            for key in ["reasoning", "content"]:
-                if piece := delta.get(key):
-                    print(piece, end="", flush=True)
-                    message[key] += piece
-            message["tool_calls"] += delta.get("tool_calls", [])
-
+    last_event = None
+    for event in stream:
+        if event.type == "response.reasoning_text.delta":
+            if last_event != event.type:
+                print()
+            print(event.delta, end="", flush=True)
+        elif event.type == "response.output_text.delta":
+            if last_event != event.type:
+                print()
+            print(event.delta, end="", flush=True)
+        elif event.type == "response.completed":
+            response = event.response
+        last_event = event.type
     print()
-    return message
+
+    messages += response.output
+
+    keep_running = False
+    for item in response.output:
+        if item.type == "function_call":
+            keep_running = True
+            messages.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": item.call_id,
+                    "output": TOOLS[item.name](**json.loads(item.arguments)),
+                }
+            )
+
+    return keep_running
+
+
+def user_message(prompt):
+    return {"role": "user", "content": prompt}
 
 
 prompt = "What's the current date and time?"
-messages = [{"role": "user", "content": prompt}]
+messages = [user_message(prompt)]
 
-# ask current date and time and get first response
-message = generate(messages)
-messages.append(message)
-
-# the server already parsed the tool calls, make the tool calls and append output
-messages.extend(
-    {
-        "role": "tool",
-        "tool_call_id": tool["id"],
-        "content": TOOLS[tool["function"]["name"]](
-            **json.loads(tool["function"]["arguments"])
-        ),
-    }
-    for tool in message["tool_calls"]
-)
-
-# give it to the agent in new request and get the new output
-messages.append(generate(messages))
-
-print(json.dumps(messages, indent=2))
+while generate(messages):
+    pass

@@ -32,7 +32,10 @@
               llvmPackages_21.llvm
               libxml2
               libffi
-              (python3.withPackages (ps: [ ps.transformers ]))
+              (python3.withPackages (ps: [
+                ps.transformers
+                ps.openai
+              ]))
             ]);
         };
       }
